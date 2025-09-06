@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulación Integral v8.2 - Gestor de Colas</title>
+    <style>
+        :root {
+            --color-azul-principal: #0F0C2C; --color-blanco: #FFFFFF; --color-gris: #D2D2D2;
+            --color-borde: #e9ecef; --color-verde: #28a745; --color-azul-claro: #cce5ff;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #e9ecef; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; height: 100vh; box-sizing: border-box; }
+        .main-container { display: grid; grid-template-columns: 1fr 1.2fr; gap: 20px; width: 100%; height: 100%; max-width: 1800px; }
+        .grid-item { background: var(--color-blanco); border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); overflow: hidden; }
+        .header { grid-column: 1 / -1; padding: 15px 25px; font-size: 1.8em; font-weight: bold; text-align: center; color: var(--color-blanco); background-color: var(--color-azul-principal); }
+        #kiosk-view { position: relative; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        #language-toggle { position: absolute; top: 30px; right: 30px; padding: 8px 12px; font-size: 0.9em; font-weight: bold; background: var(--color-borde); border: 1px solid var(--color-gris); border-radius: 8px; cursor: pointer; z-index: 10; }
+        #kiosk-container { width: 100%; height: 100%; background-color: var(--color-blanco); border: 1px solid var(--color-borde); display: flex; flex-direction: column; box-shadow: none; position: relative; }
+        .kiosk-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; padding: 5%; text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box; opacity: 0; visibility: hidden; transition: opacity 0.3s ease-in-out; background: var(--color-blanco); }
+        .kiosk-screen.active { opacity: 1; visibility: visible; }
+        .kiosk-screen img.logo { max-width: 60%; height: auto; margin-bottom: 40px; }
+        .kiosk-screen h2 { font-size: 2.2em; margin: 0 0 20px 0; color: var(--color-azul-principal); }
+        .kiosk-screen p { font-size: 1.3em; line-height: 1.6; max-width: 80%; color: var(--color-azul-principal); }
+        .button-grid { display: grid; grid-template-columns: 1fr; gap: 15px; width: 100%; max-width: 400px; }
+        #screen-inicio .button-grid { grid-template-columns: 1fr 1fr; max-width: 90%; }
+        #screen-inicio .button-grid .btn:nth-child(5):last-child { grid-column: 1 / span 2; justify-self: center; width: 50%; }
+        .btn { padding: 20px; font-size: 1.2em; font-weight: bold; border-radius: 10px; cursor: pointer; transition: all 0.2s; border: 2px solid var(--color-azul-principal); }
+        .btn-primary { background-color: var(--color-azul-principal); color: var(--color-blanco); }
+        .btn-primary:hover { background-color: var(--color-blanco); color: var(--color-azul-principal); }
+        .btn-secondary { background-color: var(--color-blanco); color: var(--color-azul-principal); }
+        .btn-secondary:hover { background-color: var(--color-azul-principal); color: var(--color-blanco); }
+        #ticket-prefix { font-size: 5em; font-weight: bold; color: var(--color-azul-principal); margin-bottom: 20px;}
+        #staff-view { display: flex; flex-direction: column; }
+        .tabs { display: flex; }
+        .tab-button { flex: 1; padding: 15px; background: #f8f9fa; border: none; border-bottom: 3px solid transparent; font-size: 1.2em; font-weight: bold; cursor: pointer; }
+        .tab-button.active { border-bottom: 3px solid var(--color-azul-principal); background: var(--color-blanco); }
+        .tab-content { padding: 25px; flex-grow: 1; overflow-y: auto; }
+        .hidden { display: none; }
+        .control-group { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid var(--color-borde); }
+        .control-group:last-child { border-bottom: none; }
+        .control-group h3, .control-group h4 { margin: 0 0 15px 0; }
+        .config-item { display:flex; gap: 20px; align-items:center; flex-wrap: wrap; margin-top: 10px; }
+        .config-item label { font-weight: 500; }
+        .config-item input[type=number] { width: 60px; padding: 5px; font-size: 1em; }
+        .toggle-switch-container { display: flex; flex-direction: column; gap: 10px; }
+        .toggle-switch { display: flex; align-items: center; gap: 10px; }
+        .toggle-switch label { font-weight: 500; }
+        .toggle-switch input { width: 40px; height: 20px; appearance: none; background: var(--color-gris); border-radius: 10px; position: relative; cursor: pointer; transition: 0.2s; }
+        .toggle-switch input::before { content: ''; position: absolute; width: 16px; height: 16px; border-radius: 50%; background: white; top: 2px; left: 2px; transition: 0.2s; }
+        .toggle-switch input:checked { background: var(--color-verde); }
+        .toggle-switch input:checked::before { left: 22px; }
+        #receptionist-panel-content { display: flex; flex-direction: column; gap: 20px; }
+        .reception-area { padding-top: 10px; border-top: 1px solid var(--color-borde); }
+        .reception-area:first-child{ border-top: none; padding-top: 0;}
+        .reception-area h3 { text-align: center; }
+        .desks-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .reception-desk { border: 1px solid var(--color-borde); border-radius: 10px; padding: 15px; text-align: center; }
+        .now-serving-display { margin: 10px 0; padding: 10px; border-radius: 8px; background: var(--color-azul-claro); font-size: 1.8em; font-weight: bold; min-height: 30px; }
+        .queue-list { list-style: none; padding: 0; margin-top: 15px; height: 120px; overflow-y: auto; border: 1px solid var(--color-borde); font-size: 0.9em; }
+        .queue-list li { padding: 5px 8px; border-bottom: 1px solid var(--color-borde); font-family: monospace; }
+        .P { background: #f8d7da; } .C { background: #fff3cd; } .A { background: #d4edda; }
+        #receptionB-specialization { margin-left: 20px; padding-left: 20px; border-left: 2px solid var(--color-borde); }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="header grid-item">Simulador de Gestión de Colas v8.2</div>
+        <div id="kiosk-view" class="grid-item">
+            <button id="language-toggle" onclick="toggleLanguage()">Switch to English</button>
+            <div id="kiosk-container">
+                
+                <div id="screen-inicio" class="kiosk-screen active">
+                    <img id="logo-img" src="logo_clinica.png" alt="Logo de la Clínica" class="logo">
+                    <div class="button-grid">
+                        <button data-lang="haveAppointment" class="btn btn-primary" onclick="handleFlowSelection('haveAppointment')"></button>
+                        <button data-lang="wantAppointment" class="btn btn-primary" onclick="handleFlowSelection('wantAppointment')"></button>
+                        <button data-lang="aesthetics" class="btn btn-primary" onclick="handleFlowSelection('aesthetics')"></button>
+                        <button data-lang="dental" class="btn btn-primary" onclick="handleFlowSelection('dental')"></button>
+                        <button data-lang="companyCheckups" class="btn btn-primary" onclick="handleFlowSelection('companyCheckups')"></button>
+                    </div>
+                </div>
+                <div id="screen-pregunta-compania" class="kiosk-screen">
+                    <h2 data-lang="hasInsurance"></h2>
+                    <div class="button-grid">
+                        <button data-lang="yes" class="btn btn-primary" onclick="handleCompaniaResponse(true)"></button>
+                        <button data-lang="no" class="btn btn-secondary" onclick="handleCompaniaResponse(false)"></button>
+                    </div>
+                </div>
+                <div id="screen-qr" class="kiosk-screen">
+                    <h2 data-lang="requestOnline"></h2>
+                    <a href="https://www.clinicapremium.com/pida-cita-online/" target="_blank"><img id="qr-code-img" src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=https://www.clinicapremium.com/pida-cita-online/" alt="QR"></a>
+                    <p data-lang="requestAtDeskMessage"></p>
+                    <button data-lang="requestAtDeskButton" class="btn btn-primary" onclick="generateTicket('A')"></button>
+                </div>
+                <div id="screen-ticket" class="kiosk-screen">
+                    <h2 data-lang="yourTicket"></h2>
+                    <div id="ticket-prefix"></div>
+                    <p id="ticket-message"></p>
+                    <button data-lang="goHome" class="btn btn-secondary" onclick="goHome()"></button>
+                </div>
+                <div id="screen-info" class="kiosk-screen">
+                     <h2 data-lang="importantInfo"></h2>
+                     <p id="info-message" style="white-space: pre-wrap;"></p>
+                     <button data-lang="goHome" class="btn btn-secondary" onclick="goHome()"></button>
+                </div>
+            </div>
+        </div>
+
+        <div id="staff-view" class="grid-item">
+            <div class="tabs">
+                <button id="tab-admin" class="tab-button active" onclick="showTab('admin-panel')">Panel de Control</button>
+                <button id="tab-reception" class="tab-button" onclick="showTab('receptionist-panel')">Recepcionistas</button>
+            </div>
+
+            <div id="admin-panel" class="tab-content">
+                 <div class="control-group">
+                    <h3>Configuración de Puestos y Colas</h3>
+                    <div class="config-item">
+                        <label for="desks-A">Puestos en Recepción A:</label>
+                        <input type="number" id="desks-A" min="1" max="5" value="1" onchange="updateDeskCount('A', this.value)">
+                    </div>
+                     <div class="config-item">
+                        <div class="toggle-switch">
+                            <input type="checkbox" id="private-desks-toggle" onchange="updateSetting('receptionA_privateDesksOnly', this.checked)">
+                            <label for="private-desks-toggle">Limitar tickets Privados (P) a Puestos A1 y A2</label>
+                        </div>
+                    </div>
+                    <div class="config-item" style="margin-top:15px;">
+                         <div class="toggle-switch">
+                            <input type="checkbox" id="receptionB-toggle" onchange="toggleReceptionB(this.checked)">
+                            <label for="receptionB-toggle">Habilitar Recepción B</label>
+                        </div>
+                        <div id="desk-b-config" class="hidden">
+                            <label for="desks-B">Puestos:</label>
+                            <input type="number" id="desks-B" min="1" max="2" value="1" onchange="updateDeskCount('B', this.value)">
+                            <div id="receptionB-specialization">
+                                <h4>Especialización (solo atiende):</h4>
+                                <div class="toggle-switch"><input type="checkbox" id="spec-B-A" onchange="updateSetting('receptionB_spec_A', this.checked)"><label for="spec-B-A">Tickets "Pedir Cita" (A)</label></div>
+                                <div class="toggle-switch"><input type="checkbox" id="spec-B-P" onchange="updateSetting('receptionB_spec_P', this.checked)"><label for="spec-B-P">Tickets "Privados" (P)</label></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                 <div class="control-group">
+                    <h3>Sistema de Prioridades (Entre C y A)</h3>
+                     <div class="config-item">
+                        <label for="priority-system">Método:</label>
+                        <select id="priority-system" onchange="updateSetting('prioritySystem', this.value)">
+                            <option value="jerarquico">Jerárquico (P > C > A)</option>
+                            <option value="ratio">Ratio</option>
+                        </select>
+                     </div>
+                     <div id="ratio-config" class="config-item hidden">
+                        <label for="priority-ratio">Llamar a</label>
+                        <input type="number" id="priority-ratio" min="1" value="5" onchange="updateSetting('priorityRatio', this.value)">
+                        <label for="priority-ratio">ticket(s) 'C' por cada 1 ticket 'A'</label>
+                     </div>
+                </div>
+                <div class="control-group">
+                    <h3>Visibilidad de Botones (Quiosco)</h3>
+                    <div id="kiosk-button-toggles" class="toggle-switch-container"></div>
+                </div>
+                <div class="control-group">
+                    <h3>Mensajes Personalizados</h3>
+                    <label for="reco-message-es">Mensaje Reconocimientos (ES):</label>
+                    <textarea id="reco-message-es" rows="2" style="width: 95%;" oninput="updateRecoMessage('es', this.value)"></textarea>
+                    <label for="reco-message-en" style="margin-top:10px;">Mensaje Reconocimientos (EN):</label>
+                    <textarea id="reco-message-en" rows="2" style="width: 95%;" oninput="updateRecoMessage('en', this.value)"></textarea>
+                </div>
+                 <div class="control-group">
+                    <h3>Sistema</h3>
+                     <button class="btn btn-secondary" onclick="openCallerWindow('A')">Abrir Pantalla (Recepción A)</button>
+                     <button class="btn btn-secondary" onclick="openCallerWindow('B')">Abrir Pantalla (Recepción B)</button>
+                    <button class="btn btn-secondary" onclick="resetAllQueues()">Limpiar Colas</button>
+                    <button class="btn btn-secondary" onclick="resetTicketCounters()">Reiniciar Contadores</button>
+                </div>
+            </div>
+
+            <div id="receptionist-panel" class="tab-content hidden">
+                <div id="receptionist-panel-content">
+                    <div class="reception-area" id="reception-area-A">
+                        <h3>Recepción A</h3>
+                        <div class="desks-container" id="reception-A-desks"></div>
+                        <h4>Cola de Espera:</h4>
+                        <ul class="queue-list" id="queue-A"></ul>
+                    </div>
+                    <div class="reception-area" id="reception-area-B">
+                        <h3>Recepción B</h3>
+                        <div class="desks-container" id="reception-B-desks"></div>
+                        <h4>Cola de Espera:</h4>
+                        <ul class="queue-list" id="queue-B"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const translations = {
+        es: {
+            haveAppointment: "Tengo cita", wantAppointment: "Quiero pedir cita", aesthetics: "Estética", dental: "Dental", companyCheckups: "Reconocimientos Médicos de Empresa",
+            hasInsurance: "¿Tiene Usted Compañía Aseguradora?", yes: "Sí", no: "No", requestOnline: "Pida su cita online y ahorre tiempo", requestAtDeskMessage: "O si lo prefiere, continúe para ser atendido en recepción.",
+            requestAtDeskButton: "Cita en Recepción", yourTicket: "Su ticket de atención", goHome: "Volver al Inicio", importantInfo: "Información Importante",
+            receptionMsg: "Por favor diríjase a la sala de espera de la recepción {RECEPTION} y será llamado por las pantallas.",
+            dentalMsg: "Por favor, diríjase directamente al puesto de Dental en la Recepción Principal.",
+            aestheticsMsg: "Por favor, diríjase directamente a la recepción de Estética.",
+            checkupsMsg: "Información Importante\nPor favor, diríjase directamente a la sala de espera de las consultas 21 y 25, al final del pasillo a la derecha y aguarde a ser llamado.",
+            callsTitle: "Últimas llamadas:", langButton: "Switch to English", desk: "Puesto", callNext: "Llamar Siguiente"
+        },
+        en: {
+            haveAppointment: "I have an appointment", wantAppointment: "I want to book an appointment", aesthetics: "Aesthetics", dental: "Dental", companyCheckups: "Company Medical Check-ups",
+            hasInsurance: "Do you have health insurance?", yes: "Yes", no: "No", requestOnline: "Book your appointment online and save time", requestAtDeskMessage: "Or, if you prefer, continue to be attended at the reception.",
+            requestAtDeskButton: "Appointment at Reception", yourTicket: "Your service ticket", goHome: "Back to Start", importantInfo: "Important Information",
+            receptionMsg: "Please proceed to the waiting room for reception {RECEPTION} and you will be called on the screens.",
+            dentalMsg: "Please go directly to the Dental desk at the Main Reception.",
+            aestheticsMsg: "Please go directly to the Aesthetics reception.",
+            checkupsMsg: "Important Information\nPlease proceed directly to the waiting room for consultations 21 and 25, at the end of the hallway to the right, and wait to be called.",
+            callsTitle: "Last calls:", langButton: "Cambiar a Español", desk: "Desk", callNext: "Call Next"
+        }
+    };
+
+    let callerWindowA = null;
+    let callerWindowB = null;
+    const clinicState = {
+        queues: { RECEP_A: [], RECEP_B: [], DENTAL: [], ESTETICA: [] },
+        settings: {
+            receptionB_active: false, activeDesksA: 1, activeDesksB: 1, receptionA_privateDesksOnly: false,
+            receptionB_spec_A: false, receptionB_spec_P: false,
+            prioritySystem: 'jerarquico', priorityRatio: 5,
+            kioskButtons: { haveAppointment: true, wantAppointment: true, aesthetics: true, dental: true, companyCheckups: true }
+        },
+        ticketCounters: { P: 1, C: 1, A: 1, E: 1, D: 1 },
+        nowServing: {}, 
+        calls: [],
+        currentLanguage: 'es',
+        ratioCounter: 0
+    };
+    
+    function showScreen(screenId) {
+        document.querySelectorAll('.kiosk-screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(screenId).classList.add('active');
+    }
+
+    function toggleLanguage() {
+        clinicState.currentLanguage = clinicState.currentLanguage === 'es' ? 'en' : 'es';
+        renderKiosk();
+    }
+
+    function openCallerWindow(receptionId) {
+        let targetWindow = receptionId === 'A' ? callerWindowA : callerWindowB;
+        const windowName = `CallerScreen${receptionId}`;
+        if (targetWindow && !targetWindow.closed) { targetWindow.focus(); return; }
+        targetWindow = window.open('', windowName, 'width=800,height=600');
+        if (!targetWindow || typeof targetWindow.closed == 'undefined') {
+            alert("¡La ventana emergente fue bloqueada! Por favor, permite las ventanas emergentes para este archivo."); return;
+        }
+        if (receptionId === 'A') callerWindowA = targetWindow; else callerWindowB = targetWindow;
+        
+        const T_es = translations['es'];
+        const callerHTML = `
+            <!DOCTYPE html><html lang="es"><head><title>Sala de Espera - Recepción ${receptionId}</title>
+            <style>
+                body { font-family: system-ui, sans-serif; background: #FFF; margin: 0; padding: 20px; color: #0F0C2C; } .container { display: flex; flex-direction: column; height: calc(100vh - 40px); }
+                #latest-call { text-align: center; border: 5px solid #0F0C2C; border-radius: 15px; padding: 30px 0; animation: fadeIn 0.5s; flex-shrink: 0;}
+                #latest-call .ticket { font-size: 8em; font-weight: bold; } #latest-call .desk { font-size: 3em; color: #555; }
+                #history-title { text-align: center; margin-top: 20px; font-size: 1.5em; color: #555; }
+                #call-history { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 15px; text-align: center; }
+                .history-item { background: #f0f4f8; border-radius: 8px; padding: 15px; } .history-item .ticket { font-size: 2.2em; font-weight: bold; }
+                .history-item .desk { font-size: 1.1em; color: #555; } @keyframes fadeIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+            </style>
+            </head><body>
+                <div class="container">
+                    <div id="latest-call"><div class="ticket">- - -</div><div class="desk"></div></div>
+                    <h3 id="history-title">${T_es.callsTitle}</h3>
+                    <div id="call-history"></div>
+                </div>
+            </body></html>`;
+        targetWindow.document.write(callerHTML);
+        targetWindow.document.close();
+        renderCallerScreen(receptionId);
+    }
+
+    function updateSetting(key, value) {
+        clinicState.settings[key] = value;
+        if (key === 'prioritySystem') {
+            document.getElementById('ratio-config').classList.toggle('hidden', value !== 'ratio');
+        }
+        renderAll();
+    }
+    function updateDeskCount(reception, count) {
+        const num = parseInt(count, 10);
+        if (reception === 'A' && num >= 1 && num <= 5) clinicState.settings.activeDesksA = num;
+        if (reception === 'B' && num >= 1 && num <= 2) clinicState.settings.activeDesksB = num;
+        renderReceptionistPanel();
+    }
+    function toggleReceptionB(isActive) {
+        clinicState.settings.receptionB_active = isActive;
+        document.getElementById('desk-b-config').classList.toggle('hidden', !isActive);
+        if (!isActive && clinicState.queues.RECEP_B.length > 0) {
+            clinicState.queues.RECEP_A.push(...clinicState.queues.RECEP_B);
+            clinicState.queues.RECEP_B = [];
+        }
+        renderAll();
+    }
+    function toggleKioskButton(checkbox) {
+        const buttonKey = checkbox.dataset.button;
+        clinicState.settings.kioskButtons[buttonKey] = checkbox.checked;
+        renderKiosk();
+    }
+     function updateRecoMessage(lang, text) {
+        translations[lang].checkupsMsg = text;
+        renderKiosk();
+    }
+    
+    function callNext(deskId) {
+        const receptionType = deskId.charAt(0);
+        const queueName = `RECEP_${receptionType}`;
+        const queue = clinicState.queues[queueName];
+        if (queue.length === 0) return;
+
+        const isPrivateDesk = (deskId === 'A1' || deskId === 'A2');
+        const privateLimited = clinicState.settings.receptionA_privateDesksOnly;
+        let nextTicketIndex = -1;
+
+        if (!privateLimited || isPrivateDesk) {
+            nextTicketIndex = queue.findIndex(t => t.prefix === 'P');
+        }
+
+        if (nextTicketIndex === -1) {
+            if (clinicState.settings.prioritySystem === 'jerarquico') {
+                nextTicketIndex = queue.findIndex(t => t.prefix === 'C');
+                if (nextTicketIndex === -1) nextTicketIndex = queue.findIndex(t => t.prefix === 'A');
+            } else { // Ratio system
+                const hasC = queue.some(t => t.prefix === 'C');
+                const hasA = queue.some(t => t.prefix === 'A');
+                if (clinicState.ratioCounter < clinicState.settings.priorityRatio && hasC) {
+                    nextTicketIndex = queue.findIndex(t => t.prefix === 'C');
+                    if(nextTicketIndex !== -1) clinicState.ratioCounter++;
+                } else if (hasA) {
+                    nextTicketIndex = queue.findIndex(t => t.prefix === 'A');
+                    if(nextTicketIndex !== -1) clinicState.ratioCounter = 0;
+                } else if (hasC) { 
+                    nextTicketIndex = queue.findIndex(t => t.prefix === 'C');
+                }
+            }
+        }
+        
+        if(nextTicketIndex === -1) return;
+
+        const [nextTicket] = queue.splice(nextTicketIndex, 1);
+        clinicState.nowServing[deskId] = nextTicket;
+        
+        const T_es = translations['es'];
+        const newCall = { ticket: nextTicket.id, desk: `${T_es.desk.toUpperCase()} ${deskId}` };
+        clinicState.calls.unshift(newCall);
+        if (clinicState.calls.length > 5) clinicState.calls.pop();
+        
+        renderAll();
+    }
+
+    function handleFlowSelection(flow) {
+        clinicState.currentKioskFlow = flow;
+        const T = translations[clinicState.currentLanguage];
+        switch (flow) {
+            case 'haveAppointment': 
+            case 'wantAppointment': 
+                showScreen('screen-pregunta-compania'); 
+                break;
+            case 'aesthetics': generateTicket('E'); break;
+            case 'dental': generateTicket('D'); break;
+            case 'companyCheckups': 
+                document.getElementById('info-message').innerText = T.checkupsMsg;
+                showScreen('screen-info'); 
+                break;
+        }
+    }
+    function handleCompaniaResponse(tieneCompania) {
+        if (clinicState.currentKioskFlow === 'wantAppointment' && tieneCompania) {
+            showScreen('screen-qr');
+        } else {
+            const prefix = tieneCompania ? 'C' : 'P';
+            generateTicket(prefix);
+        }
+    }
+    function generateTicket(prefix) {
+        const T = translations[clinicState.currentLanguage];
+        let finalMessage = '';
+        if (prefix === 'E') finalMessage = T.aestheticsMsg;
+        else if (prefix === 'D') finalMessage = T.dentalMsg;
+        
+        let assignedReception = '';
+        if (['P', 'C', 'A'].includes(prefix)) {
+            let targetQueueB = false;
+            if(clinicState.settings.receptionB_active){
+                const spec = clinicState.settings;
+                const isBSpecialized = spec.receptionB_spec_A || spec.receptionB_spec_P;
+                let ticketMatchesSpecialization = (prefix === 'A' && spec.receptionB_spec_A) || (prefix === 'P' && spec.receptionB_spec_P);
+                if (!isBSpecialized || ticketMatchesSpecialization) {
+                    if (clinicState.queues.RECEP_B.length < clinicState.queues.RECEP_A.length) {
+                        targetQueueB = true;
+                    }
+                }
+            }
+            assignedReception = targetQueueB ? 'B' : 'A';
+            finalMessage = T.receptionMsg.replace('{RECEPTION}', assignedReception);
+        }
+        
+        const ticketNumber = clinicState.ticketCounters[prefix]++;
+        const fullTicketId = prefix + String(ticketNumber).padStart(3, '0');
+        const ticket = { id: fullTicketId, prefix, message: finalMessage };
+        
+        if (assignedReception === 'B') clinicState.queues.RECEP_B.push(ticket);
+        else if (assignedReception === 'A') clinicState.queues.RECEP_A.push(ticket);
+        else if (prefix === 'E') clinicState.queues.ESTETICA.push(ticket);
+        else if (prefix === 'D') clinicState.queues.DENTAL.push(ticket);
+        
+        document.getElementById('ticket-prefix').innerText = ticket.id;
+        document.getElementById('ticket-message').innerText = ticket.message;
+        showScreen('screen-ticket');
+        renderReceptionistPanel(); 
+    }
+    function goHome() { showScreen('screen-inicio'); }
+
+    function renderAll() {
+        renderKiosk();
+        renderAdminPanel();
+        renderReceptionistPanel();
+        renderCallerScreen('A');
+        renderCallerScreen('B');
+    }
+
+    function renderKiosk() {
+        const T = translations[clinicState.currentLanguage];
+        document.getElementById('language-toggle').innerText = T.langButton;
+
+        document.querySelectorAll('[data-lang]').forEach(el => {
+            const key = el.getAttribute('data-lang');
+            if (T[key]) el.innerText = T[key];
+        });
+        
+        for(const key in clinicState.settings.kioskButtons){
+            const btn = document.querySelector(`button[onclick="handleFlowSelection('${key}')"]`);
+            if(btn) btn.style.display = clinicState.settings.kioskButtons[key] ? 'block' : 'none';
+        }
+    }
+
+    function renderAdminPanel() {
+        const T_es = translations['es'];
+        const container = document.getElementById('kiosk-button-toggles');
+        container.innerHTML = '';
+        for (const key in clinicState.settings.kioskButtons) {
+            container.innerHTML += `<div class="toggle-switch"><input type="checkbox" id="btn-toggle-${key}" data-button="${key}" onchange="toggleKioskButton(this)" ${clinicState.settings.kioskButtons[key] ? 'checked' : ''}><label for="btn-toggle-${key}">${T_es[key]}</label></div>`;
+        }
+        document.getElementById('reco-message-es').value = translations.es.checkupsMsg;
+        document.getElementById('reco-message-en').value = translations.en.checkupsMsg;
+        document.getElementById('priority-system').value = clinicState.settings.prioritySystem;
+        document.getElementById('priority-ratio').value = clinicState.settings.priorityRatio;
+        document.getElementById('ratio-config').classList.toggle('hidden', clinicState.settings.prioritySystem !== 'ratio');
+    }
+
+    function renderReceptionistPanel() {
+        const T = translations['es'];
+        
+        const containerA = document.getElementById('reception-A-desks');
+        containerA.innerHTML = '';
+        for (let i = 1; i <= clinicState.settings.activeDesksA; i++) {
+            const deskId = `A${i}`;
+            const serving = clinicState.nowServing[deskId] ? clinicState.nowServing[deskId].id : '---';
+            containerA.innerHTML += `<div class="reception-desk"><h4>${T.desk} A${i}</h4><button class="btn btn-primary" style="width:100%" onclick="callNext('${deskId}')">${T.callNext}</button><div class="now-serving-display">${serving}</div></div>`;
+        }
+
+        document.getElementById('reception-area-B').style.display = clinicState.settings.receptionB_active ? 'block' : 'none';
+        if (clinicState.settings.receptionB_active) {
+            const containerB = document.getElementById('reception-B-desks');
+            containerB.innerHTML = '';
+            for (let i = 1; i <= clinicState.settings.activeDesksB; i++) {
+                const deskId = `B${i}`;
+                const serving = clinicState.nowServing[deskId] ? clinicState.nowServing[deskId].id : '---';
+                containerB.innerHTML += `<div class="reception-desk"><h4>${T.desk} B${i}</h4><button class="btn btn-primary" style="width:100%" onclick="callNext('${deskId}')">${T.callNext}</button><div class="now-serving-display">${serving}</div></div>`;
+            }
+        }
+        
+        document.getElementById('queue-A').innerHTML = clinicState.queues.RECEP_A.map(t => `<li class="${t.prefix}">${t.id}</li>`).join('');
+        document.getElementById('queue-B').innerHTML = clinicState.queues.RECEP_B.map(t => `<li class="${t.prefix}">${t.id}</li>`).join('');
+    }
+
+    function renderCallerScreen(receptionId) {
+        const targetWindow = receptionId === 'A' ? callerWindowA : callerWindowB;
+        if (!targetWindow || targetWindow.closed) return;
+        
+        try {
+            const callsForReception = clinicState.calls.filter(c => c.desk.includes(receptionId));
+            const latestCall = callsForReception[0];
+            const latestCallDiv = targetWindow.document.getElementById('latest-call');
+            if (latestCall) {
+                latestCallDiv.querySelector('.ticket').innerText = latestCall.ticket;
+                latestCallDiv.querySelector('.desk').innerText = latestCall.desk;
+            } else {
+                latestCallDiv.querySelector('.ticket').innerText = '- - -';
+                latestCallDiv.querySelector('.desk').innerText = '';
+            }
+            const historyDiv = targetWindow.document.getElementById('call-history');
+            historyDiv.innerHTML = callsForReception.slice(1, 4).map(call => `<div class="history-item"><div class="ticket">${call.ticket}</div><div class="desk">${call.desk}</div></div>`).join('');
+        } catch (e) {
+            if (receptionId === 'A') callerWindowA = null;
+            else callerWindowB = null;
+        }
+    }
+
+    function showTab(tabId) { 
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden')); 
+        document.getElementById(tabId).classList.remove('hidden'); 
+        document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active')); 
+        if(tabId === 'admin-panel') document.getElementById('tab-admin').classList.add('active'); 
+        else document.getElementById('tab-reception').classList.add('active'); 
+    }
+    function resetAllQueues() { clinicState.queues = { RECEP_A: [], RECEP_B: [], DENTAL: [], ESTETICA: [] }; clinicState.nowServing = {}; clinicState.calls = []; renderAll(); }
+    function resetTicketCounters() { clinicState.ticketCounters = { P: 1, C: 1, A: 1, E: 1, D: 1 }; renderAll(); }
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        showScreen('screen-inicio');
+        renderAll();
+    });
+</script>
+</body>
+</html>
